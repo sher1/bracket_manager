@@ -10,7 +10,14 @@
   };
 
   const parseParticipants = (form) => {
-    const field = form.querySelector('input[name="field_tournament_participants[target_id]"]') || form.querySelector('[name^="field_tournament_participants"]');
+    const select = form.querySelector('select[name*="participants"]');
+    if (select) {
+      return Array.from(select.selectedOptions)
+        .map((option) => option.textContent.trim())
+        .filter(Boolean);
+    }
+
+    const field = form.querySelector('input[name*="participants"]') || form.querySelector('[name^="participants"]');
     if (!field) {
       return [];
     }
@@ -21,7 +28,7 @@
   };
 
   const parseBracketData = (form) => {
-    const field = form.querySelector('textarea[name*="field_bracket_data"]');
+    const field = form.querySelector('textarea[name*="bracket_data"]');
     if (!field || !field.value.trim()) {
       return null;
     }
@@ -114,15 +121,17 @@
           return;
         }
 
-        const participantsField = form.querySelector('input[name="field_tournament_participants[target_id]"]') || form.querySelector('[name^="field_tournament_participants"]');
-        const bracketField = form.querySelector('textarea[name*="field_bracket_data"]');
+        const participantsField = form.querySelector('select[name*="participants"]') || form.querySelector('input[name*="participants"]') || form.querySelector('[name^="participants"]');
+        const bracketField = form.querySelector('textarea[name*="bracket_data"]');
         const refresh = () => renderPreview(preview);
 
         if (participantsField) {
-          participantsField.addEventListener('input', Drupal.debounce(() => {
+          const updateParticipants = Drupal.debounce(() => {
             autoUpdateBracketData(form);
             refresh();
-          }, 300));
+          }, 300);
+          participantsField.addEventListener('input', updateParticipants);
+          participantsField.addEventListener('change', updateParticipants);
         }
         if (bracketField) {
           bracketField.addEventListener('input', Drupal.debounce(() => {
@@ -141,7 +150,7 @@
    */
   function autoUpdateBracketData(form) {
     const participants = parseParticipants(form);
-    const bracketField = form.querySelector('textarea[name*="field_bracket_data"]');
+    const bracketField = form.querySelector('textarea[name*="bracket_data"]');
     if (!bracketField || bracketField.dataset.userEdited) {
       return;
     }

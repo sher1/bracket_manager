@@ -39,6 +39,13 @@ class TournamentForm extends ContentEntityForm {
       '#weight' => -8,
     ];
 
+    if (isset($form['participants'])) {
+      $form['participants']['#attributes']['class'][] = 'bracket-manager-participants-select';
+      // Wrap in an AJAX refreshable container so the modal can replace the select.
+      $form['participants']['#prefix'] = '<div id="bracket-manager-participants-wrapper">';
+      $form['participants']['#suffix'] = '</div>';
+    }
+
     $form['bracket_preview'] = [
       '#type' => 'container',
       '#weight' => 6,

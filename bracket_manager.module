@@ -37,6 +37,11 @@ function bracket_manager_form_alter(array &$form, FormStateInterface $form_state
     '#weight' => -8,
   ];
 
+  // Make it easy for AJAX to target the participants element.
+  if (isset($form['participants'])) {
+    $form['participants']['#attributes']['class'][] = 'bracket-manager-participants-select';
+  }
+
   // Add preview wrapper.
   $form['bracket_preview'] = [
     '#type' => 'container',

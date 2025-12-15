@@ -7,6 +7,7 @@ namespace Drupal\bracket_manager\Form;
 use Drupal\Core\Ajax\AjaxResponse;
 use Drupal\Core\Ajax\CloseModalDialogCommand;
 use Drupal\Core\Ajax\HtmlCommand;
+use Drupal\Core\Ajax\InvokeCommand;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
@@ -58,17 +59,23 @@ class ParticipantModalForm extends FormBase {
    * AJAX submit handler to save the participant and close the modal.
    */
   public function ajaxSubmit(array &$form, FormStateInterface $form_state): AjaxResponse {
+    $response = new AjaxResponse();
     if ($form_state->getErrors()) {
-      $response = new AjaxResponse();
+      // Return the rebuilt form with errors.
       $response->addCommand(new HtmlCommand('#' . $form['#id'], $form));
       return $response;
     }
 
-    $this->submitForm($form, $form_state);
-
-    $response = new AjaxResponse();
+    // Submit handlers have already run; simply close the modal and notify.
     $response->addCommand(new CloseModalDialogCommand());
     $response->addCommand(new HtmlCommand('.bracket-manager-participant-notice', $this->t('Participant created. Use autocomplete to select it.')));
+    if ($participant = $form_state->get('new_participant')) {
+      $option = sprintf('<option value="%d" selected="selected">%s</option>', $participant['id'], htmlspecialchars($participant['label'], ENT_QUOTES, 'UTF-8'));
+      // Append the new option, remove the _none placeholder if present, and refresh preview.
+      $response->addCommand(new InvokeCommand('#edit-participants option[value=\"_none\"]', 'remove', []));
+      $response->addCommand(new InvokeCommand('#edit-participants', 'append', [$option]));
+      $response->addCommand(new InvokeCommand('#edit-participants', 'trigger', ['change']));
+    }
     return $response;
   }
 
@@ -87,6 +94,7 @@ class ParticipantModalForm extends FormBase {
     ]);
     $participant->save();
 
+    $form_state->set('new_participant', ['id' => $participant->id(), 'label' => $name]);
     $this->messenger()->addStatus($this->t('Created participant %name.', ['%name' => $name]));
     $form_state->setRedirectUrl(Url::fromRoute('<current>'));
   }

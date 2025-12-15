@@ -130,7 +130,7 @@ class Tournament extends ContentEntityBase {
       ])
       ->setCardinality(BaseFieldDefinition::CARDINALITY_UNLIMITED)
       ->setDisplayOptions('form', [
-        'type' => 'entity_reference_autocomplete_tags',
+        'type' => 'options_select',
         'weight' => 0,
         'settings' => [
           'match_operator' => 'CONTAINS',
