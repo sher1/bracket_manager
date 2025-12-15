@@ -1,0 +1,9 @@
+bracket_manager.participant_modal:
+  path: '/admin/structure/tournaments/participant/modal'
+  defaults:
+    _form: '\Drupal\bracket_manager\Form\ParticipantModalForm'
+    _title: 'Add participant'
+  requirements:
+    _permission: 'manage tournament entities'
+  options:
+    _admin_route: TRUE

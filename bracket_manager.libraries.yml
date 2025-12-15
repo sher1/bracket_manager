@@ -1,0 +1,50 @@
+brackets_manager_js:
+  remote: https://github.com/Drarig29/brackets-manager.js
+  version: 1.8.1
+  js:
+    https://esm.sh/brackets-manager@1.8.1?bundle: { type: external, minified: true, attributes: { type: module } }
+  license:
+    name: ISC
+    url: https://github.com/Drarig29/brackets-manager.js/blob/master/LICENSE
+    gpl-compatible: true
+
+bracket_form:
+  js:
+    js/tournament-form.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings
+
+bracket_viewer:
+  js:
+    js/tournament-viewer.js: {}
+  css:
+    theme:
+      css/bracket-manager.css: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings
+
+brackets_viewer_js:
+  remote: https://github.com/Drarig29/brackets-viewer.js
+  version: 1.9.0
+  js:
+    https://cdn.jsdelivr.net/npm/brackets-viewer@1.9.0/dist/brackets-viewer.min.js: { type: external, minified: true }
+  css:
+    theme:
+      https://cdn.jsdelivr.net/npm/brackets-viewer@1.9.0/dist/brackets-viewer.min.css: { type: external }
+  license:
+    name: ISC
+    url: https://github.com/Drarig29/brackets-viewer.js/blob/master/LICENSE
+    gpl-compatible: true
+
+views_bracket_viewer:
+  js:
+    js/views-bracket-viewer.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/drupalSettings
+    - bracket_manager/brackets_viewer_js

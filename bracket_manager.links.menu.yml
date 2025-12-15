@@ -1,0 +1,6 @@
+entity.tournament.collection:
+  title: 'Tournaments'
+  route_name: entity.tournament.collection
+  description: 'Manage tournament brackets'
+  parent: system.admin_structure
+  weight: 100

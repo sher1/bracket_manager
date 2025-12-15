@@ -1,0 +1,10 @@
+name: 'Bracket Manager'
+type: module
+description: 'Allows for managment of Tournament Brackets'
+package: Custom
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:field
+  - drupal:text
+  - drupal:user
+  - drupal:node

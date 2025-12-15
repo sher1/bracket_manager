@@ -1,0 +1,5 @@
+entity.tournament.add_form:
+  route_name: entity.tournament.add_form
+  title: 'Add tournament'
+  appears_on:
+    - entity.tournament.collection

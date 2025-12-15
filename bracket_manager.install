@@ -1,0 +1,344 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the Bracket Manager module.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function bracket_manager_install(): void {
+  bracket_manager_create_participant_type();
+  bracket_manager_create_tournament_type();
+}
+
+/**
+ * Migrate participants from the legacy text field into participant entities.
+ */
+function bracket_manager_update_9001(array &$sandbox): string {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+
+  // Ensure the participant entity schema exists before migration.
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+  if (!$schema->tableExists('tournament_participant')) {
+    $participant_definition = \Drupal::entityTypeManager()->getDefinition('tournament_participant');
+    $update_manager->installEntityType($participant_definition);
+  }
+
+  // If the old column is gone, simply ensure entity updates are applied.
+  if (!$schema->fieldExists('tournament_field_data', 'participants')) {
+    $entity_type = $update_manager->getEntityType('tournament');
+    $field_definitions = \Drupal::service('entity_field.manager')->getFieldStorageDefinitions('tournament');
+    $update_manager->updateFieldableEntityType($entity_type, $field_definitions);
+    return t('Participants column already removed; entity schema updated.');
+  }
+
+  if (!isset($sandbox['tournaments'])) {
+    $sandbox['tournaments'] = $database->select('tournament_field_data', 't')
+      ->fields('t', ['id', 'participants'])
+      ->execute()
+      ->fetchAllKeyed();
+    $sandbox['processed'] = 0;
+    $sandbox['max'] = count($sandbox['tournaments']);
+  }
+
+  $participant_storage = \Drupal::entityTypeManager()->getStorage('tournament_participant');
+  $batch_size = 25;
+  $ids = array_keys($sandbox['tournaments']);
+  $slice = array_slice($ids, $sandbox['processed'], $batch_size);
+
+  foreach ($slice as $id) {
+    $raw_participants = $sandbox['tournaments'][$id] ?? '';
+    $names = array_values(array_filter(array_map('trim', preg_split('/\r\n?|\n/', (string) $raw_participants))));
+    foreach ($names as $weight => $name) {
+      $participant = $participant_storage->create([
+        'name' => $name,
+        'tournament' => $id,
+        'weight' => $weight,
+      ]);
+      $participant->save();
+    }
+    $sandbox['processed']++;
+  }
+
+  if ($sandbox['processed'] < $sandbox['max']) {
+    $sandbox['#finished'] = $sandbox['processed'] / max(1, $sandbox['max']);
+    return t('Migrating tournament participants (@processed of @total).', [
+      '@processed' => $sandbox['processed'],
+      '@total' => $sandbox['max'],
+    ]);
+  }
+
+  $entity_type = $update_manager->getEntityType('tournament');
+  $field_definitions = \Drupal::service('entity_field.manager')->getFieldStorageDefinitions('tournament');
+  $update_manager->updateFieldableEntityType($entity_type, $field_definitions);
+  return t('Participants migrated to related entities and schema updated.');
+}
+
+/**
+ * Create Participant content type with seeding field and wire entity updates.
+ */
+function bracket_manager_update_9002(): string {
+  bracket_manager_create_participant_type();
+
+  // Apply entity definition updates so the new tournament participants field
+  // is installed.
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+  $entity_type = $update_manager->getEntityType('tournament');
+  $field_definitions = \Drupal::service('entity_field.manager')->getFieldStorageDefinitions('tournament');
+  $update_manager->updateFieldableEntityType($entity_type, $field_definitions);
+
+  // Migrate existing custom participant entities to the new content type.
+  if (\Drupal::database()->schema()->tableExists('tournament_participant')) {
+    $tp_storage = \Drupal::entityTypeManager()->getStorage('tournament_participant');
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    $tournament_storage = \Drupal::entityTypeManager()->getStorage('tournament');
+
+    $tp_ids = $tp_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->execute();
+    if ($tp_ids) {
+      /** @var \Drupal\bracket_manager\Entity\TournamentParticipant[] $participants */
+      $participants = $tp_storage->loadMultiple($tp_ids);
+      $by_tournament = [];
+      foreach ($participants as $participant) {
+        $by_tournament[$participant->get('tournament')->target_id][] = $participant;
+      }
+      foreach ($by_tournament as $tournament_id => $items) {
+        $node_ids = [];
+        usort($items, static function ($a, $b) {
+          return ((int) $a->get('weight')->value) <=> ((int) $b->get('weight')->value);
+        });
+        foreach ($items as $item) {
+          $node = $node_storage->create([
+            'type' => 'participant',
+            'title' => $item->get('name')->value,
+            'field_seeding' => (int) $item->get('weight')->value,
+            'status' => 1,
+          ]);
+          $node->save();
+          $node_ids[] = $node->id();
+        }
+        if ($node_ids) {
+          /** @var \Drupal\bracket_manager\Entity\Tournament $tournament */
+          $tournament = $tournament_storage->load($tournament_id);
+          if ($tournament) {
+            $tournament->set('participants', $node_ids);
+            $tournament->save();
+          }
+        }
+      }
+    }
+  }
+
+  return t('Participant content type created, tournament participant references migrated, and schema updated.');
+}
+
+/**
+ * Create Tournament content type and migrate custom tournament entities.
+ */
+function bracket_manager_update_9003(): string {
+  bracket_manager_create_tournament_type();
+
+  // Migrate existing tournament entities to nodes.
+  if (\Drupal::entityTypeManager()->hasDefinition('tournament')) {
+    $storage = \Drupal::entityTypeManager()->getStorage('tournament');
+    $ids = $storage->getQuery()->accessCheck(FALSE)->execute();
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+
+    if ($ids) {
+      foreach ($storage->loadMultiple($ids) as $entity) {
+        $node = $node_storage->create([
+          'type' => 'tournament',
+          'title' => $entity->label(),
+          'field_description' => $entity->get('description')->value ?? '',
+          'field_bracket_data' => $entity->get('bracket_data')->value ?? '',
+          'field_active' => $entity->get('active')->value ?? 1,
+        ]);
+
+        // Carry over participant references if present.
+        if ($entity->hasField('participants')) {
+          $node->set('field_tournament_participants', $entity->get('participants')->getValue());
+        }
+        $node->save();
+      }
+    }
+  }
+
+  return t('Tournament content type created and existing tournaments migrated.');
+}
+
+/**
+ * Creates the Participant content type and seeding field if missing.
+ */
+function bracket_manager_create_participant_type(): void {
+  $node_type_storage = \Drupal::entityTypeManager()->getStorage('node_type');
+  $type = $node_type_storage->load('participant');
+  if (!$type) {
+    $type = $node_type_storage->create([
+      'type' => 'participant',
+      'name' => 'Participant',
+      'description' => 'Tournament participant/team.',
+    ]);
+    $type->save();
+  }
+
+  // Create field storage/instance for seeding.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_seeding');
+  if (!$field_storage) {
+    $field_storage = \Drupal\field\Entity\FieldStorageConfig::create([
+      'field_name' => 'field_seeding',
+      'entity_type' => 'node',
+      'type' => 'integer',
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ]);
+    $field_storage->save();
+  }
+
+  $field = \Drupal\field\Entity\FieldConfig::loadByName('node', 'participant', 'field_seeding');
+  if (!$field) {
+    $field = \Drupal\field\Entity\FieldConfig::create([
+      'field_name' => 'field_seeding',
+      'entity_type' => 'node',
+      'bundle' => 'participant',
+      'label' => 'Seeding',
+      'required' => FALSE,
+    ]);
+    $field->save();
+  }
+
+  // Ensure basic form/view displays.
+  \Drupal::service('entity_display.repository')->getFormDisplay('node', 'participant', 'default')
+    ->setComponent('title', [
+      'type' => 'string_textfield',
+      'weight' => -10,
+    ])
+    ->setComponent('field_seeding', [
+      'type' => 'number',
+      'weight' => -5,
+    ])
+    ->save();
+
+  \Drupal::service('entity_display.repository')->getViewDisplay('node', 'participant', 'default')
+    ->setComponent('field_seeding', [
+      'type' => 'number_integer',
+      'weight' => 0,
+    ])
+    ->save();
+}
+
+/**
+ * Creates the Tournament content type and fields if missing.
+ */
+function bracket_manager_create_tournament_type(): void {
+  $node_type_storage = \Drupal::entityTypeManager()->getStorage('node_type');
+  $type = $node_type_storage->load('tournament');
+  if (!$type) {
+    $type = $node_type_storage->create([
+      'type' => 'tournament',
+      'name' => 'Tournament',
+      'description' => 'Bracket tournament.',
+    ]);
+    $type->save();
+  }
+
+  // Description field.
+  if (!\Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_description')) {
+    \Drupal\field\Entity\FieldStorageConfig::create([
+      'field_name' => 'field_description',
+      'entity_type' => 'node',
+      'type' => 'text_long',
+      'translatable' => TRUE,
+    ])->save();
+  }
+  if (!\Drupal\field\Entity\FieldConfig::loadByName('node', 'tournament', 'field_description')) {
+    \Drupal\field\Entity\FieldConfig::create([
+      'field_name' => 'field_description',
+      'entity_type' => 'node',
+      'bundle' => 'tournament',
+      'label' => 'Description',
+    ])->save();
+  }
+
+  // Bracket data field.
+  if (!\Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_bracket_data')) {
+    \Drupal\field\Entity\FieldStorageConfig::create([
+      'field_name' => 'field_bracket_data',
+      'entity_type' => 'node',
+      'type' => 'text_long',
+    ])->save();
+  }
+  if (!\Drupal\field\Entity\FieldConfig::loadByName('node', 'tournament', 'field_bracket_data')) {
+    \Drupal\field\Entity\FieldConfig::create([
+      'field_name' => 'field_bracket_data',
+      'entity_type' => 'node',
+      'bundle' => 'tournament',
+      'label' => 'Bracket data',
+    ])->save();
+  }
+
+  // Active field.
+  if (!\Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_active')) {
+    \Drupal\field\Entity\FieldStorageConfig::create([
+      'field_name' => 'field_active',
+      'entity_type' => 'node',
+      'type' => 'boolean',
+      'settings' => ['on_label' => 'Active', 'off_label' => 'Inactive'],
+    ])->save();
+  }
+  if (!\Drupal\field\Entity\FieldConfig::loadByName('node', 'tournament', 'field_active')) {
+    \Drupal\field\Entity\FieldConfig::create([
+      'field_name' => 'field_active',
+      'entity_type' => 'node',
+      'bundle' => 'tournament',
+      'label' => 'Active',
+      'default_value' => [['value' => 1]],
+    ])->save();
+  }
+
+  // Participant references.
+  if (!\Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_tournament_participants')) {
+    \Drupal\field\Entity\FieldStorageConfig::create([
+      'field_name' => 'field_tournament_participants',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'node',
+      ],
+      'cardinality' => -1,
+    ])->save();
+  }
+  if (!\Drupal\field\Entity\FieldConfig::loadByName('node', 'tournament', 'field_tournament_participants')) {
+    \Drupal\field\Entity\FieldConfig::create([
+      'field_name' => 'field_tournament_participants',
+      'entity_type' => 'node',
+      'bundle' => 'tournament',
+      'label' => 'Participants',
+      'settings' => [
+        'handler' => 'default:node',
+        'handler_settings' => [
+          'target_bundles' => ['participant' => 'participant'],
+        ],
+      ],
+    ])->save();
+  }
+
+  // Displays.
+  \Drupal::service('entity_display.repository')->getFormDisplay('node', 'tournament', 'default')
+    ->setComponent('title', ['type' => 'string_textfield', 'weight' => -10])
+    ->setComponent('field_description', ['type' => 'text_textarea', 'weight' => -8])
+    ->setComponent('field_tournament_participants', ['type' => 'entity_reference_autocomplete_tags', 'weight' => -6])
+    ->setComponent('field_bracket_data', ['type' => 'text_textarea', 'weight' => 5, 'settings' => ['rows' => 8]])
+    ->setComponent('field_active', ['type' => 'boolean_checkbox', 'weight' => 10])
+    ->save();
+
+  \Drupal::service('entity_display.repository')->getViewDisplay('node', 'tournament', 'default')
+    ->setComponent('field_description', ['type' => 'text_default', 'weight' => -8])
+    ->setComponent('field_tournament_participants', ['type' => 'entity_reference_label', 'weight' => 0])
+    ->setComponent('field_bracket_data', ['type' => 'text_default', 'weight' => 5])
+    ->setComponent('field_active', ['type' => 'boolean', 'weight' => 10])
+    ->save();
+}

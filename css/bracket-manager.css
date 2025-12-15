@@ -1,0 +1,28 @@
+.bracket-manager-preview,
+.bracket-manager-viewer {
+  border: 1px solid #d6d6d6;
+  padding: 1rem;
+  border-radius: 4px;
+  background: #f8f8f8;
+}
+
+.bracket-manager-preview__canvas,
+.bracket-manager-viewer__canvas {
+  min-height: 80px;
+}
+
+.bracket-manager-preview__json,
+.bracket-manager-viewer__json {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: #1e1e1e;
+  color: #f5f5f5;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+.bracket-manager-preview__participants,
+.bracket-manager-viewer__participants {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}

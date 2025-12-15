@@ -1,0 +1,85 @@
+<?php
+
+/**
+ * @file
+ * Primary module hooks for Bracket Manager module.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+
+/**
+ * Adds preview and modal helper to tournament node forms.
+ */
+function bracket_manager_form_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
+  if (!in_array($form_id, ['node_tournament_form', 'node_tournament_edit_form'], TRUE)) {
+    return;
+  }
+
+  $form['#attached']['library'][] = 'bracket_manager/bracket_form';
+  $form['#attached']['library'][] = 'core/drupal.dialog.ajax';
+
+  $form['participants_modal'] = [
+    '#type' => 'link',
+    '#title' => t('Add participant'),
+    '#url' => Url::fromRoute('bracket_manager.participant_modal'),
+    '#attributes' => [
+      'class' => ['button', 'button--small', 'use-ajax'],
+      'data-dialog-type' => 'modal',
+      'data-dialog-options' => json_encode(['width' => 600]),
+    ],
+    '#weight' => -9,
+  ];
+
+  $form['participants_notice'] = [
+    '#type' => 'container',
+    '#attributes' => ['class' => ['bracket-manager-participant-notice']],
+    '#weight' => -8,
+  ];
+
+  // Add preview wrapper.
+  $form['bracket_preview'] = [
+    '#type' => 'container',
+    '#weight' => 100,
+    '#attributes' => ['class' => ['bracket-manager-preview']],
+    'canvas' => [
+      '#markup' => '<div class="bracket-manager-preview__canvas"></div>',
+    ],
+    '#description' => t('Live preview generated from the participants and bracket data fields.'),
+  ];
+}
+
+/**
+ * Attach bracket viewer to tournament node view render arrays.
+ */
+function bracket_manager_entity_view(array &$build, \Drupal\Core\Entity\EntityInterface $entity, \Drupal\Core\Entity\Display\EntityViewDisplayInterface $display, $view_mode): void {
+  if ($entity->getEntityTypeId() !== 'node' || $entity->bundle() !== 'tournament') {
+    return;
+  }
+
+  $participants = [];
+  if ($entity->hasField('field_tournament_participants')) {
+    foreach ($entity->get('field_tournament_participants')->referencedEntities() as $participant) {
+      $participants[] = $participant->label();
+    }
+  }
+  $data = $entity->hasField('field_bracket_data') ? (string) $entity->get('field_bracket_data')->value : '';
+
+  $build['bracket_manager'] = [
+    '#type' => 'container',
+    '#attributes' => [
+      'class' => ['bracket-manager-viewer'],
+      'data-tournament-id' => $entity->id(),
+    ],
+    'canvas' => [
+      '#markup' => '<div class="bracket-manager-viewer__canvas"></div>',
+    ],
+  ];
+
+  $build['#attached']['library'][] = 'bracket_manager/bracket_viewer';
+  $build['#attached']['drupalSettings']['bracketManager']['tournaments'][$entity->id()] = [
+    'name' => $entity->label(),
+    'participants' => $participants,
+    'data' => $data,
+  ];
+}

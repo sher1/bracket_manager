@@ -1,0 +1,20 @@
+administer tournament entities:
+  title: 'Administer tournaments'
+  description: 'Manage configuration for tournament entities.'
+  restrict access: true
+
+add tournament entities:
+  title: 'Create tournaments'
+  description: 'Add tournament bracket records.'
+
+manage tournament entities:
+  title: 'Edit tournaments'
+  description: 'Edit tournament bracket records.'
+
+delete tournament entities:
+  title: 'Delete tournaments'
+  description: 'Remove tournament bracket records.'
+
+view tournament entities:
+  title: 'View tournaments'
+  description: 'View tournament entries and bracket previews.'
