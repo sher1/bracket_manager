@@ -153,7 +153,7 @@ class TournamentBracket extends FieldPluginBase {
   /**
    * Returns participant names associated with a tournament entity.
    */
-  protected function loadParticipantNames(EntityInterface $entity = NULL): array {
+  protected function loadParticipantNames(?EntityInterface $entity = NULL): array {
     if ($entity instanceof Tournament) {
       return $entity->getParticipantNames();
     }
